@@ -348,3 +348,47 @@ fn test_download_item_deserialization() {
     assert_eq!(item.url, "https://example.com/file.zip");
     assert_eq!(item.save_path, "downloads/file.zip");
 }
+
+#[test]
+fn test_convert_to_mirror_url_huggingface() {
+    let url = "https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf";
+    let mirror = convert_to_mirror_url(url);
+    assert!(mirror.is_some());
+    let mirror_url = mirror.unwrap();
+    assert!(mirror_url.starts_with("https://apps.jan.ai/") || mirror_url.starts_with("https://apps-nightly.jan.ai/"));
+    assert!(mirror_url.contains("huggingface.co/TheBloke/Llama-2-7B-GGUF"));
+}
+
+#[test]
+fn test_convert_to_mirror_url_github() {
+    let url = "https://github.com/janhq/llama.cpp/releases/download/v1.0/backend.tar.gz";
+    let mirror = convert_to_mirror_url(url);
+    assert!(mirror.is_some());
+    let mirror_url = mirror.unwrap();
+    assert!(mirror_url.starts_with("https://apps.jan.ai/") || mirror_url.starts_with("https://apps-nightly.jan.ai/"));
+    assert!(mirror_url.contains("github.com/janhq/llama.cpp"));
+}
+
+#[test]
+fn test_convert_to_mirror_url_raw_githubusercontent() {
+    let url = "https://raw.githubusercontent.com/janhq/model-catalog/main/model_catalog_v2.json";
+    let mirror = convert_to_mirror_url(url);
+    assert!(mirror.is_some());
+    let mirror_url = mirror.unwrap();
+    assert!(mirror_url.starts_with("https://apps.jan.ai/") || mirror_url.starts_with("https://apps-nightly.jan.ai/"));
+    assert!(mirror_url.contains("raw.githubusercontent.com/janhq/model-catalog"));
+}
+
+#[test]
+fn test_convert_to_mirror_url_non_mirrored_domain() {
+    let url = "https://example.com/some/file.zip";
+    let mirror = convert_to_mirror_url(url);
+    assert!(mirror.is_none());
+}
+
+#[test]
+fn test_convert_to_mirror_url_invalid_url() {
+    let url = "not-a-valid-url";
+    let mirror = convert_to_mirror_url(url);
+    assert!(mirror.is_none());
+}

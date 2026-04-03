@@ -53,10 +53,25 @@ export class DefaultModelsService implements ModelsService {
       const catalog: ModelCatalog = await response.json()
       return catalog
     } catch (error) {
-      console.error('Error fetching model catalog:', error)
-      throw new Error(
-        `Failed to fetch model catalog: ${error instanceof Error ? error.message : 'Unknown error'}`
-      )
+      // Fallback: if primary (GitHub) fails, retry with CDN
+      console.warn('Primary model catalog fetch failed, falling back to CDN:', error)
+      try {
+        const cdnResponse = await fetch(MODEL_CATALOG_CDN_URL)
+
+        if (!cdnResponse.ok) {
+          throw new Error(
+            `CDN fallback also failed: ${cdnResponse.status} ${cdnResponse.statusText}`
+          )
+        }
+
+        const catalog: ModelCatalog = await cdnResponse.json()
+        return catalog
+      } catch (cdnError) {
+        console.error('Error fetching model catalog from both sources:', cdnError)
+        throw new Error(
+          `Failed to fetch model catalog: ${cdnError instanceof Error ? cdnError.message : 'Unknown error'}`
+        )
+      }
     }
   }
 
@@ -65,10 +80,9 @@ export class DefaultModelsService implements ModelsService {
       const response = await fetch(LATEST_JAN_MODEL_URL)
 
       if (!response.ok) {
-        console.error(
+        throw new Error(
           `Failed to fetch latest Jan model: ${response.status} ${response.statusText}`
         )
-        return null
       }
 
       const data = await response.json()
@@ -76,8 +90,26 @@ export class DefaultModelsService implements ModelsService {
       const model: CatalogModel = Array.isArray(data) ? data[0] : data
       return model ?? null
     } catch (error) {
-      console.error('Error fetching latest Jan model:', error)
-      return null
+      // Fallback: if primary (GitHub) fails, retry with CDN
+      console.warn('Primary latest Jan model fetch failed, falling back to CDN:', error)
+      try {
+        const cdnResponse = await fetch(LATEST_JAN_MODEL_CDN_URL)
+
+        if (!cdnResponse.ok) {
+          console.error(
+            `CDN fallback also failed: ${cdnResponse.status} ${cdnResponse.statusText}`
+          )
+          return null
+        }
+
+        const data = await cdnResponse.json()
+
+        const model: CatalogModel = Array.isArray(data) ? data[0] : data
+        return model ?? null
+      } catch (cdnError) {
+        console.error('Error fetching latest Jan model from both sources:', cdnError)
+        return null
+      }
     }
   }
 

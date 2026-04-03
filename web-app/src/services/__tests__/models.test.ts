@@ -24,9 +24,24 @@ vi.mock('@janhq/core', () => ({
 // Mock fetch
 global.fetch = vi.fn()
 
-// Mock MODEL_CATALOG_URL
+// Mock MODEL_CATALOG_URL and CDN fallback URLs
 Object.defineProperty(global, 'MODEL_CATALOG_URL', {
   value: 'https://example.com/models',
+  writable: true,
+  configurable: true,
+})
+Object.defineProperty(global, 'MODEL_CATALOG_CDN_URL', {
+  value: 'https://cdn.example.com/models',
+  writable: true,
+  configurable: true,
+})
+Object.defineProperty(global, 'LATEST_JAN_MODEL_URL', {
+  value: 'https://example.com/latest-model',
+  writable: true,
+  configurable: true,
+})
+Object.defineProperty(global, 'LATEST_JAN_MODEL_CDN_URL', {
+  value: 'https://cdn.example.com/latest-model',
   writable: true,
   configurable: true,
 })
@@ -98,24 +113,150 @@ describe('DefaultModelsService', () => {
       expect(result).toEqual(mockCatalog)
     })
 
-    it('should handle fetch error', async () => {
-      ;(fetch as any).mockResolvedValue({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      })
+    it('should fallback to CDN when primary fetch fails with HTTP error', async () => {
+      const mockCatalog = [
+        {
+          model_name: 'GPT-4',
+          description: 'Large language model',
+          developer: 'OpenAI',
+          downloads: 1000,
+          num_quants: 5,
+          quants: [],
+        },
+      ]
 
-      await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
-        'Failed to fetch model catalog: 404 Not Found'
-      )
+      ;(fetch as any)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          statusText: 'Service Unavailable',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue(mockCatalog),
+        })
+
+      const result = await modelsService.fetchModelCatalog()
+
+      expect(result).toEqual(mockCatalog)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch).toHaveBeenNthCalledWith(1, 'https://example.com/models')
+      expect(fetch).toHaveBeenNthCalledWith(2, 'https://cdn.example.com/models')
     })
 
-    it('should handle network error', async () => {
-      ;(fetch as any).mockRejectedValue(new Error('Network error'))
+    it('should fallback to CDN when primary fetch fails with network error', async () => {
+      const mockCatalog = [
+        {
+          model_name: 'GPT-4',
+          description: 'Large language model',
+          developer: 'OpenAI',
+          downloads: 1000,
+          num_quants: 5,
+          quants: [],
+        },
+      ]
+
+      ;(fetch as any)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue(mockCatalog),
+        })
+
+      const result = await modelsService.fetchModelCatalog()
+
+      expect(result).toEqual(mockCatalog)
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('should throw when both primary and CDN fail', async () => {
+      ;(fetch as any)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          statusText: 'Service Unavailable',
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 502,
+          statusText: 'Bad Gateway',
+        })
 
       await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
-        'Failed to fetch model catalog: Network error'
+        'Failed to fetch model catalog'
       )
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('should throw when both primary and CDN have network errors', async () => {
+      ;(fetch as any)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('CDN also down'))
+
+      await expect(modelsService.fetchModelCatalog()).rejects.toThrow(
+        'Failed to fetch model catalog: CDN also down'
+      )
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('fetchLatestJanModel', () => {
+    it('should fetch latest Jan model successfully', async () => {
+      const mockModel = {
+        model_name: 'Jan Model',
+        developer: 'Jan',
+        downloads: 500,
+        num_quants: 1,
+        quants: [],
+      }
+
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockModel),
+      })
+
+      const result = await modelsService.fetchLatestJanModel()
+
+      expect(result).toEqual(mockModel)
+    })
+
+    it('should fallback to CDN when primary fetch fails', async () => {
+      const mockModel = {
+        model_name: 'Jan Model',
+        developer: 'Jan',
+        downloads: 500,
+        num_quants: 1,
+        quants: [],
+      }
+
+      ;(fetch as any)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          statusText: 'Service Unavailable',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue(mockModel),
+        })
+
+      const result = await modelsService.fetchLatestJanModel()
+
+      expect(result).toEqual(mockModel)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch).toHaveBeenNthCalledWith(1, 'https://example.com/latest-model')
+      expect(fetch).toHaveBeenNthCalledWith(2, 'https://cdn.example.com/latest-model')
+    })
+
+    it('should return null when both primary and CDN fail', async () => {
+      ;(fetch as any)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('CDN also down'))
+
+      const result = await modelsService.fetchLatestJanModel()
+
+      expect(result).toBeNull()
+      expect(fetch).toHaveBeenCalledTimes(2)
     })
   })
 
